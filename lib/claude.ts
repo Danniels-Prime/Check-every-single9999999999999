@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { PROMPTS } from '../constants/prompts';
-import type { Segment, Summary, ChatMessage } from '../types';
+import type { Segment, Summary, ChatMessage, Flashcard } from '../types';
 
 const client = new Anthropic({
   apiKey: process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '',
@@ -105,6 +105,39 @@ export async function generatePhantomInsight(
   return response.content[0].type === 'text'
     ? response.content[0].text
     : '';
+}
+
+export async function generateFlashcards(
+  segments: Segment[],
+  count = 5
+): Promise<Flashcard[]> {
+  if (segments.length < 2) return [];
+  const transcript = buildTranscriptContext(segments);
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1200,
+    system: PROMPTS.flashcard(count),
+    messages: [{ role: 'user', content: `Transcript:\n\n${transcript}` }],
+  });
+
+  const raw = response.content[0].type === 'text' ? response.content[0].text : '';
+
+  try {
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    if (!Array.isArray(parsed)) return [];
+    const now = new Date().toISOString();
+    return parsed.map((item: { question?: string; answer?: string; source_text?: string }) => ({
+      id: Math.random().toString(36).slice(2),
+      recording_id: '',
+      question: item.question || '',
+      answer: item.answer || '',
+      source_text: item.source_text,
+      created_at: now,
+    })).filter((c: Flashcard) => c.question && c.answer);
+  } catch {
+    return [];
+  }
 }
 
 export async function generateTitle(segments: Segment[]): Promise<string> {

@@ -46,6 +46,10 @@ export default function RootLayout() {
           options={{ title: 'Coach', tabBarIcon: () => null }}
         />
         <Tabs.Screen
+          name="flashcards"
+          options={{ title: 'Cards', tabBarIcon: () => null }}
+        />
+        <Tabs.Screen
           name="settings"
           options={{ title: 'Settings', tabBarIcon: () => null }}
         />

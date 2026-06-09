@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { StoredRecording } from '../types';
+import type { StoredRecording, FlashcardSet } from '../types';
 
 const RECORDINGS_KEY = 'nota_recordings';
 
@@ -28,4 +28,27 @@ export async function deleteRecording(id: string): Promise<void> {
   const recordings = await getRecordings();
   const updated = recordings.filter(r => r.id !== id);
   await AsyncStorage.setItem(RECORDINGS_KEY, JSON.stringify(updated));
+}
+
+const FLASHCARD_SETS_KEY = 'nota_flashcard_sets';
+
+export async function saveFlashcardSet(set: FlashcardSet): Promise<void> {
+  const existing = await getFlashcardSets();
+  const updated = [set, ...existing.filter(s => s.id !== set.id)];
+  await AsyncStorage.setItem(FLASHCARD_SETS_KEY, JSON.stringify(updated));
+}
+
+export async function getFlashcardSets(): Promise<FlashcardSet[]> {
+  const raw = await AsyncStorage.getItem(FLASHCARD_SETS_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as FlashcardSet[];
+  } catch {
+    return [];
+  }
+}
+
+export async function getFlashcardSetsForRecording(recordingId: string): Promise<FlashcardSet[]> {
+  const sets = await getFlashcardSets();
+  return sets.filter(s => s.recording_id === recordingId);
 }

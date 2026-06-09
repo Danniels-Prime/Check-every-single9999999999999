@@ -7,15 +7,16 @@ import { Audio } from 'expo-av';
 import { router } from 'expo-router';
 import { THEME } from '../constants/theme';
 import { DeepgramClient } from '../lib/deepgram';
-import { coachChat, generateSummary, generateTitle } from '../lib/claude';
+import { coachChat, generateSummary, generateTitle, generateFlashcards } from '../lib/claude';
 import { PhantomEngine } from '../lib/phantom';
-import { saveRecording } from '../lib/storage';
+import { saveRecording, saveFlashcardSet } from '../lib/storage';
 import WaveformBars from '../components/WaveformBars';
 import TranscriptSegment from '../components/TranscriptSegment';
 import CoachBubble from '../components/CoachBubble';
 import SummarySheet from '../components/SummarySheet';
+import FlashcardSheet from '../components/FlashcardSheet';
 import PhantomLayer from '../components/PhantomLayer';
-import type { Segment, ChatMessage, PhantomEvent, Summary } from '../types';
+import type { Segment, ChatMessage, PhantomEvent, Summary, Flashcard } from '../types';
 
 export default function RecordScreen() {
   const [isRecording, setIsRecording] = useState(false);
@@ -37,6 +38,11 @@ export default function RecordScreen() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [phantomEvents, setPhantomEvents] = useState<PhantomEvent[]>([]);
   const [activeTab, setActiveTab] = useState<'transcript' | 'coach'>('transcript');
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [flashcardsVisible, setFlashcardsVisible] = useState(false);
+  const [flashcardsLoading, setFlashcardsLoading] = useState(false);
+  const [flashcardsSaved, setFlashcardsSaved] = useState(false);
+  const currentRecordingIdRef = useRef<string>(Math.random().toString(36).slice(2));
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const deepgramRef = useRef<DeepgramClient | null>(null);
@@ -173,6 +179,31 @@ export default function RecordScreen() {
     setSummaryLoading(false);
   };
 
+  const handleFlashcards = async () => {
+    if (!segments.length) return;
+    setFlashcardsLoading(true);
+    setFlashcardsVisible(true);
+    setFlashcardsSaved(false);
+    try {
+      const cards = await generateFlashcards(segments, 6);
+      setFlashcards(cards);
+    } catch { /* handle */ }
+    setFlashcardsLoading(false);
+  };
+
+  const handleSaveFlashcards = async () => {
+    if (!flashcards.length || flashcardsSaved) return;
+    const title = await generateTitle(segmentsRef.current).catch(() => 'Recording');
+    await saveFlashcardSet({
+      id: Math.random().toString(36).slice(2),
+      recording_id: currentRecordingIdRef.current,
+      recording_title: title,
+      cards: flashcards.map(c => ({ ...c, recording_id: currentRecordingIdRef.current })),
+      created_at: new Date().toISOString(),
+    });
+    setFlashcardsSaved(true);
+  };
+
   const sendCoachMessage = async (text: string) => {
     if (!text.trim() || isCoachTyping) return;
     const userMsg: ChatMessage = {
@@ -241,13 +272,23 @@ export default function RecordScreen() {
             {formatTime(elapsed)}
           </Text>
 
-          <TouchableOpacity
-            style={[styles.btnSummary, !segments.length && styles.btnDisabled]}
-            onPress={handleSummary}
-            disabled={!segments.length}
-          >
-            <Text style={styles.btnSummaryText}>⚡ Summary</Text>
-          </TouchableOpacity>
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.btnCards, !segments.length && styles.btnDisabled]}
+              onPress={handleFlashcards}
+              disabled={!segments.length}
+            >
+              <Text style={styles.btnCardsText}>🃏 Cards</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.btnSummary, !segments.length && styles.btnDisabled]}
+              onPress={handleSummary}
+              disabled={!segments.length}
+            >
+              <Text style={styles.btnSummaryText}>⚡ Summary</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* TABS */}
@@ -363,6 +404,15 @@ export default function RecordScreen() {
         onClose={() => setSummaryVisible(false)}
       />
 
+      {/* FLASHCARD SHEET */}
+      <FlashcardSheet
+        visible={flashcardsVisible}
+        loading={flashcardsLoading}
+        cards={flashcards}
+        onClose={() => setFlashcardsVisible(false)}
+        onSave={flashcardsSaved ? undefined : handleSaveFlashcards}
+      />
+
       {/* PHANTOM LAYER */}
       <PhantomLayer
         events={phantomEvents}
@@ -417,9 +467,13 @@ const styles = StyleSheet.create({
   btnRecordTextActive: { color: THEME.colors.red },
   timer: { color: THEME.colors.ghostDim, fontFamily: THEME.font.mono, fontSize: 13, letterSpacing: 2 },
   timerActive: { color: THEME.colors.amber },
-  btnSummary: {
+  actionButtons: {
     marginLeft: 'auto',
-    paddingHorizontal: 14,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  btnSummary: {
+    paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: THEME.radius.sm,
     borderWidth: 1,
@@ -427,6 +481,15 @@ const styles = StyleSheet.create({
     backgroundColor: `${THEME.colors.amber}20`,
   },
   btnSummaryText: { color: THEME.colors.amber, fontFamily: THEME.font.mono, fontSize: 11, fontWeight: '700' },
+  btnCards: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: THEME.radius.sm,
+    borderWidth: 1,
+    borderColor: THEME.colors.phantom,
+    backgroundColor: `${THEME.colors.phantom}20`,
+  },
+  btnCardsText: { color: THEME.colors.phantom, fontFamily: THEME.font.mono, fontSize: 11, fontWeight: '700' },
   btnDisabled: { opacity: 0.3 },
   tabs: {
     flexDirection: 'row',

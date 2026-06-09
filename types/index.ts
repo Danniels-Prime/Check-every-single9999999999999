@@ -47,3 +47,20 @@ export interface PhantomEvent {
 export interface StoredRecording extends Recording {
   segments: Segment[];
 }
+
+export interface Flashcard {
+  id: string;
+  recording_id: string;
+  question: string;
+  answer: string;
+  source_text?: string;
+  created_at: string;
+}
+
+export interface FlashcardSet {
+  id: string;
+  recording_id: string;
+  recording_title: string;
+  cards: Flashcard[];
+  created_at: string;
+}
