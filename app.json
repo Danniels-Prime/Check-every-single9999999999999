@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Nota AI",
+    "slug": "nota-ai",
+    "version": "1.0.0",
+    "scheme": "nota-ai",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#060810"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aethermind.notaai",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Nota AI needs microphone access to record and transcribe audio."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#060810"
+      },
+      "package": "com.aethermind.notaai",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Nota AI needs microphone access to record and transcribe audio."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
