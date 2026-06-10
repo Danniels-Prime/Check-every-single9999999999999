@@ -1,6 +1,8 @@
-import React, { useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Animated,
+} from 'react-native';
 import { THEME } from '@/constants/theme';
 import type { Summary } from '@/types';
 
@@ -12,20 +14,24 @@ interface SummarySheetProps {
 }
 
 export default function SummarySheet({ visible, loading, summary, onClose }: SummarySheetProps) {
-  const translateY = useSharedValue(400);
+  const translateY = useRef(new Animated.Value(400)).current;
+  const [rendered, setRendered] = useState(visible);
 
   useEffect(() => {
-    translateY.value = withSpring(visible ? 0 : 400, { damping: 20, stiffness: 200 });
+    if (visible) {
+      setRendered(true);
+      Animated.spring(translateY, { toValue: 0, damping: 20, stiffness: 200, useNativeDriver: true }).start();
+    } else {
+      Animated.spring(translateY, { toValue: 400, damping: 20, stiffness: 200, useNativeDriver: true }).start(
+        ({ finished }) => { if (finished) setRendered(false); }
+      );
+    }
   }, [visible]);
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  if (!visible && translateY.value >= 400) return null;
+  if (!rendered) return null;
 
   return (
-    <Animated.View style={[styles.sheet, animStyle]}>
+    <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
       <View style={styles.handle} />
       <View style={styles.header}>
         <Text style={styles.title}>AI Summary</Text>

@@ -1,6 +1,5 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import React, { useRef, useEffect } from 'react';
+import { View, Animated, StyleSheet } from 'react-native';
 import { THEME } from '@/constants/theme';
 
 interface WaveformBarsProps {
@@ -9,13 +8,20 @@ interface WaveformBarsProps {
 }
 
 function Bar({ level, isActive }: { level: number; isActive: boolean }) {
-  const height = useSharedValue(4);
-  height.value = withSpring(isActive ? Math.max(4, level * 48) : 4, {
-    damping: 12,
-    stiffness: 180,
-  });
-  const style = useAnimatedStyle(() => ({ height: height.value }));
-  return <Animated.View style={[styles.bar, style, isActive && styles.barActive]} />;
+  const height = useRef(new Animated.Value(4)).current;
+
+  useEffect(() => {
+    Animated.spring(height, {
+      toValue: isActive ? Math.max(4, level * 48) : 4,
+      damping: 12,
+      stiffness: 180,
+      useNativeDriver: false,
+    }).start();
+  }, [level, isActive]);
+
+  return (
+    <Animated.View style={[styles.bar, { height }, isActive && styles.barActive]} />
+  );
 }
 
 export default function WaveformBars({ levels, isActive }: WaveformBarsProps) {
