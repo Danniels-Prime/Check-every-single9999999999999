@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: nota-ai
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Expo prebuild (generate native Android project)
         working-directory: nota-ai
