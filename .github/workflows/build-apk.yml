@@ -44,6 +44,13 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
 
+      - name: Disable R8 minification (prevents expo-modules class stripping)
+        run: |
+          # Disable ProGuard/R8 so expo.modules.kotlin.types.* classes aren't stripped
+          sed -i 's/minifyEnabled true/minifyEnabled false/g' nota-ai/android/app/build.gradle || true
+          sed -i 's/android.enableProguardInReleaseBuilds=true/android.enableProguardInReleaseBuilds=false/g' nota-ai/android/gradle.properties || true
+          echo "android.enableProguardInReleaseBuilds=false" >> nota-ai/android/gradle.properties
+
       - name: Build release APK
         working-directory: nota-ai/android
         run: ./gradlew assembleRelease --no-daemon
