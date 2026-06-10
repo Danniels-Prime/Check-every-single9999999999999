@@ -50,10 +50,11 @@ jobs:
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g"
 
-      - name: Rename APK
+      - name: Locate and rename APK
         run: |
-          cp nota-ai/android/app/build/outputs/apk/release/app-release-unsigned.apk \
-             nota-ai-v${{ github.run_number }}.apk
+          APK=$(find nota-ai/android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "Found APK at: $APK"
+          cp "$APK" nota-ai-v${{ github.run_number }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
