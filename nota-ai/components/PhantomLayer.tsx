@@ -1,12 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  runOnJS,
-} from 'react-native-reanimated';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { THEME } from '@/constants/theme';
 import type { PhantomEvent } from '@/types';
 
@@ -16,28 +9,26 @@ interface PhantomCardProps {
 }
 
 function PhantomCard({ event, onDismiss }: PhantomCardProps) {
-  const opacity = useSharedValue(0);
-  const translateX = useSharedValue(60);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateX = useRef(new Animated.Value(60)).current;
 
   useEffect(() => {
-    opacity.value = withSpring(1);
-    translateX.value = withSpring(0, { damping: 16, stiffness: 160 });
+    Animated.parallel([
+      Animated.spring(opacity, { toValue: 1, useNativeDriver: true }),
+      Animated.spring(translateX, { toValue: 0, damping: 16, stiffness: 160, useNativeDriver: true }),
+    ]).start();
 
     const timer = setTimeout(() => {
-      opacity.value = withTiming(0, { duration: 400 }, (done) => {
-        if (done) runOnJS(onDismiss)();
-      });
+      Animated.timing(opacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(
+        ({ finished }) => { if (finished) onDismiss(); }
+      );
     }, 5000);
+
     return () => clearTimeout(timer);
   }, []);
 
-  const style = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateX: translateX.value }],
-  }));
-
   return (
-    <Animated.View style={[styles.card, style]}>
+    <Animated.View style={[styles.card, { opacity, transform: [{ translateX }] }]}>
       <View style={styles.cardHeader}>
         <View style={styles.typeBadge}>
           <Text style={styles.typeText}>PHANTOM</Text>
