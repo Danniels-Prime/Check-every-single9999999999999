@@ -41,19 +41,38 @@ jobs:
         env:
           CI: 1
 
+      - name: Create android/app/package.json stub
+        working-directory: nota-ai
+        run: |
+          # @expo/cli export:embed requires package.json to exist in android/app/
+          # Gradle calls the CLI with android/app as the project root context
+          echo '{"name":"nota-ai","version":"1.0.0","private":true}' > android/app/package.json
+
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
 
       - name: Disable R8 minification (prevents expo-modules class stripping)
         run: |
-          # Disable ProGuard/R8 so expo.modules.kotlin.types.* classes aren't stripped
           sed -i 's/minifyEnabled true/minifyEnabled false/g' nota-ai/android/app/build.gradle || true
           sed -i 's/android.enableProguardInReleaseBuilds=true/android.enableProguardInReleaseBuilds=false/g' nota-ai/android/gradle.properties || true
           echo "android.enableProguardInReleaseBuilds=false" >> nota-ai/android/gradle.properties
 
+      - name: Pre-bundle JS via @expo/cli export:embed (surface Metro errors before Gradle)
+        working-directory: nota-ai
+        run: |
+          mkdir -p android/app/src/main/assets android/app/src/main/res
+          node node_modules/expo/node_modules/@expo/cli/build/bin/cli export:embed \
+            --platform android \
+            --dev false \
+            --reset-cache \
+            --entry-file index.ts \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+          echo "Bundle size: $(wc -c < android/app/src/main/assets/index.android.bundle) bytes"
+
       - name: Build release APK
         working-directory: nota-ai/android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g"
 
