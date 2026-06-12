@@ -1,0 +1,113 @@
+name: Build Lingo AI APK
+
+on:
+  push:
+    branches: [claude/nota-ai-app-setup-scwoji]
+    paths:
+      - 'lingo-ai/**'
+      - '.github/workflows/build-lingo-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: claude/nota-ai-app-setup-scwoji
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: lingo-ai/package-lock.json
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        working-directory: lingo-ai
+        run: npm install --legacy-peer-deps
+
+      - name: Expo prebuild (generate native Android project)
+        working-directory: lingo-ai
+        run: npx expo prebuild --platform android --no-install
+        env:
+          CI: 1
+
+      - name: Create android/app/package.json stub
+        working-directory: lingo-ai
+        run: echo '{"name":"lingo-ai","version":"1.0.0","private":true}' > android/app/package.json
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Disable R8 minification
+        run: |
+          sed -i 's/minifyEnabled true/minifyEnabled false/g' lingo-ai/android/app/build.gradle || true
+          echo "android.enableProguardInReleaseBuilds=false" >> lingo-ai/android/gradle.properties
+
+      - name: Pre-bundle JS via @expo/cli export:embed
+        working-directory: lingo-ai
+        run: |
+          mkdir -p android/app/src/main/assets android/app/src/main/res
+          node node_modules/expo/node_modules/@expo/cli/build/bin/cli export:embed \
+            --platform android \
+            --dev false \
+            --reset-cache \
+            --entry-file index.ts \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+          echo "Bundle size: $(wc -c < android/app/src/main/assets/index.android.bundle) bytes"
+
+      - name: Build release APK
+        working-directory: lingo-ai/android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace '-Pexpo.inlineModules.watchedDirectories=[]'
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g"
+
+      - name: Locate and rename APK
+        run: |
+          APK=$(find lingo-ai/android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "Found APK at: $APK"
+          cp "$APK" lingo-ai-v${{ github.run_number }}.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingo-ai-apk
+          path: lingo-ai-v${{ github.run_number }}.apk
+          retention-days: 30
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lingo-v1.0.${{ github.run_number }}
+          name: Lingo AI v1.0.${{ github.run_number }}
+          body: |
+            ## Lingo AI — Android APK
+
+            A real-time language learning companion. Hear speech transcribed live,
+            then **tap any word** to get an instant AI explanation of idioms, slang,
+            and phrases — in English or Spanish.
+
+            **Install instructions:**
+            1. Tap the `.apk` file below to download
+            2. Android will ask to allow installing from unknown sources — tap **Settings → Allow**
+            3. Tap **Install**
+            4. Open Lingo AI → go to **Settings** → enter your API keys
+
+            **Free API keys:**
+            - Deepgram (speech): deepgram.com — 200h/month free
+            - Anthropic (explanations): console.anthropic.com — pay-as-you-go
+          files: lingo-ai-v${{ github.run_number }}.apk
+          make_latest: false
