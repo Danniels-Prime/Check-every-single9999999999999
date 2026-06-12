@@ -1,28 +1,38 @@
-import { useState, useRef, useCallback } from 'react';
-import { Audio } from 'expo-av';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  useAudioRecorder,
+  useAudioRecorderState,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  IOSOutputFormat,
+  AudioQuality,
+} from 'expo-audio';
+import type { RecordingOptions } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const RECORDING_OPTIONS: Audio.RecordingOptions = {
+// expo-audio's RecordingOptions are flat (sampleRate/numberOfChannels/bitRate at the top level)
+// plus platform-specific android/ios/web sub-objects.
+const RECORDING_OPTIONS: RecordingOptions = {
+  extension: '.wav',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 128000,
+  isMeteringEnabled: true,
   android: {
-    extension: '.wav',
-    outputFormat: Audio.AndroidOutputFormat.DEFAULT,
-    audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
-    sampleRate: 16000,
-    numberOfChannels: 1,
-    bitRate: 128000,
+    outputFormat: 'default',  // AndroidOutputFormat
+    audioEncoder: 'default',  // AndroidAudioEncoder
   },
   ios: {
-    extension: '.wav',
-    outputFormat: Audio.IOSOutputFormat.LINEARPCM,
-    audioQuality: Audio.IOSAudioQuality.HIGH,
-    sampleRate: 16000,
-    numberOfChannels: 1,
-    bitRate: 128000,
+    outputFormat: IOSOutputFormat.LINEARPCM,
+    audioQuality: AudioQuality.HIGH,
     linearPCMBitDepth: 16,
     linearPCMIsBigEndian: false,
     linearPCMIsFloat: false,
   },
-  web: { mimeType: 'audio/webm', bitsPerSecond: 128000 },
+  web: {
+    mimeType: 'audio/webm',
+    bitsPerSecond: 128000,
+  },
 };
 
 export interface UseRecordingReturn {
@@ -38,41 +48,56 @@ export function useRecording(): UseRecordingReturn {
   const [metering, setMetering] = useState<number[]>(Array(30).fill(0));
   const [audioUri, setAudioUri] = useState<string | null>(null);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  // useAudioRecorder manages the recorder's lifecycle automatically.
+  // It accepts RecordingOptions and an optional status listener.
+  const recorder = useAudioRecorder(RECORDING_OPTIONS);
+
+  // useAudioRecorderState polls recorder.getStatus() and returns RecorderState:
+  // { canRecord, isRecording, durationMillis, mediaServicesDidReset, metering?, url }
+  // Poll at 250ms to match the original chunk interval frequency.
+  const recorderState = useAudioRecorderState(recorder, 250);
+
   const onChunkRef = useRef<((data: ArrayBuffer) => void) | null>(null);
   const lastByteOffsetRef = useRef(0);
   const chunkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Mirror metering from recorderState into the rolling metering array.
+  // recorderState.metering is a dBFS number (typically -160 to 0), same semantics
+  // as expo-av's status.metering.
+  useEffect(() => {
+    if (!isRecording) return;
+    const level = recorderState.metering ?? -60;
+    const normalized = Math.max(0, Math.min(1, (level + 60) / 60));
+    setMetering(prev => [...prev.slice(1), normalized]);
+  }, [recorderState.metering, isRecording]);
 
   const startRecording = useCallback(async (onChunk: (data: ArrayBuffer) => void) => {
     onChunkRef.current = onChunk;
     lastByteOffsetRef.current = 0;
 
-    await Audio.requestPermissionsAsync();
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
+    // expo-audio uses requestRecordingPermissionsAsync (standalone function, not Audio.requestPermissionsAsync)
+    await requestRecordingPermissionsAsync();
+
+    // expo-audio's AudioMode has renamed fields:
+    //   allowsRecordingIOS → allowsRecording
+    //   playsInSilentModeIOS → playsInSilentMode
+    await setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
     });
 
-    const recording = new Audio.Recording();
-    await recording.prepareToRecordAsync({
-      ...RECORDING_OPTIONS,
-      isMeteringEnabled: true,
-    });
+    // prepareToRecordAsync must be called before record().
+    // Options can be omitted here since we already passed them to useAudioRecorder.
+    await recorder.prepareToRecordAsync();
 
-    recording.setOnRecordingStatusUpdate((status) => {
-      if (!status.isRecording) return;
-      const level = status.metering ?? -60;
-      const normalized = Math.max(0, Math.min(1, (level + 60) / 60));
-      setMetering(prev => [...prev.slice(1), normalized]);
-    });
-
-    await recording.startAsync();
-    recordingRef.current = recording;
+    // recorder.record() is synchronous (no Async suffix). Takes optional RecordingStartOptions.
+    recorder.record();
     setIsRecording(true);
 
-    // Poll and stream audio chunks every 250ms
+    // Poll and stream audio chunks every 250ms — same strategy as before.
+    // recorder.uri is the live file URI (available after prepareToRecordAsync).
     chunkIntervalRef.current = setInterval(async () => {
-      const uri = recording.getURI();
+      const uri = recorder.uri;
       if (!uri || !onChunkRef.current) return;
       try {
         const info = await FileSystem.getInfoAsync(uri);
@@ -97,7 +122,7 @@ export function useRecording(): UseRecordingReturn {
         onChunkRef.current(buffer);
       } catch { /* ignore chunk read errors */ }
     }, 250);
-  }, []);
+  }, [recorder]);
 
   const stopRecording = useCallback(async (): Promise<string | null> => {
     if (chunkIntervalRef.current) {
@@ -108,19 +133,19 @@ export function useRecording(): UseRecordingReturn {
     setMetering(Array(30).fill(0));
     onChunkRef.current = null;
 
-    if (!recordingRef.current) return null;
+    if (!recorder.isRecording) return null;
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI() ?? null;
+      // recorder.stop() is async (returns Promise<void>).
+      // After stop(), recorder.uri holds the final file path.
+      await recorder.stop();
+      const uri = recorder.uri ?? null;
       setAudioUri(uri);
-      recordingRef.current = null;
       lastByteOffsetRef.current = 0;
       return uri;
     } catch {
-      recordingRef.current = null;
       return null;
     }
-  }, []);
+  }, [recorder]);
 
   return { isRecording, metering, audioUri, startRecording, stopRecording };
 }
