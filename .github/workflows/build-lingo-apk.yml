@@ -60,7 +60,10 @@ jobs:
         working-directory: lingo-ai
         run: |
           mkdir -p android/app/src/main/assets android/app/src/main/res
-          node node_modules/expo/node_modules/@expo/cli/build/bin/cli export:embed \
+          # Resolve @expo/cli wherever npm put it (nested in expo/ or hoisted to top-level)
+          EXPO_CLI=$(node -e "process.stdout.write(require.resolve('@expo/cli/build/bin/cli'))")
+          echo "Using CLI at: $EXPO_CLI"
+          node "$EXPO_CLI" export:embed \
             --platform android \
             --dev false \
             --reset-cache \
